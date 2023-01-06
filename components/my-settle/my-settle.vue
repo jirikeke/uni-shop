@@ -1,49 +1,132 @@
 <template>
-  <!-- 最外层的容器 -->
   <view class="my-settle-container">
-    <!-- 全选区域 -->
-    <label class="radio" @click="changeAllState">
-      <radio color="#C00000" :checked="isFullCheck" /><text>全选</text>
+    <label class="radio">
+      <radio color='#c00000' :checked="isFullCheck" @click="changeAllState" /><text>全选</text>
     </label>
-
-    <!-- 合计区域 -->
     <view class="amount-box">
-      合计:<text class="amount">￥{{checkedGoodsAmount}}</text>
+      合计：<text class="amount">{{amount.toFixed(2)}}元</text>
     </view>
-
-    <!-- 结算按钮 -->
-    <view class="btn-settle">结算({{checkedCount}})</view>
+    <view class="btn-settle" @click="settlement">
+      结算({{checkedCount}})
+    </view>
   </view>
 </template>
 
 <script>
   import {
     mapGetters,
-    mapMutations
+    mapMutations,
+    mapState
   } from 'vuex'
-
   export default {
+    name: "my-settle",
+    data() {
+      return {
+        seconds: 3,
+        timer: null
+      };
+    },
     computed: {
-      // 1. 将 total 映射到当前组件中
-      ...mapGetters('m_cart', ['checkedCount', 'total', 'checkedGoodsAmount']),
-      // 2. 是否全选
+      ...mapGetters('m_cart', ['checkedCount', 'amount', 'total']),
+      ...mapGetters('m_user', ['addstr']),
+      ...mapState('m_user', ['token']),
+      ...mapState('m_cart', ['cart']),
       isFullCheck() {
         return this.total === this.checkedCount
-      },
-    },
-    data() {
-      return {}
-    },
-    methods: {
-      // 2. 使用 mapMutations 辅助函数，把 m_cart 模块提供的 updateAllGoodsState 方法映射到当前组件中使用
-      ...mapMutations('m_cart', ['updateAllGoodsState']),
-      // label 的点击事件处理函数
-      changeAllState() {
-        // 修改购物车中所有商品的选中状态
-        // !this.isFullCheck 表示：当前全选按钮的状态取反之后，就是最新的勾选状态
-        this.updateAllGoodsState(!this.isFullCheck)
       }
     },
+    methods: {
+      ...mapMutations('m_cart', ['updateAllGoodsState']),
+      ...mapMutations('m_user', ['updateRedirectInfo']),
+      changeAllState() {
+        console.log(this.isFullCheck)
+        this.updateAllGoodsState(!this.isFullCheck)
+      },
+      settlement() {
+        if (!this.checkedCount) return uni.$showMsg("请选择要结算的商品")
+
+        if (!this.addstr) return uni.$showMsg("请选择收获地址")
+
+        // if (!this.token) return uni.$showMsg("请登录后结算")
+        if (!this.token) return this.delayNavigate()
+
+        this.payOrder()
+      },
+      // delayNavigate() {
+      // 	uni.switchTab({
+      // 		url: '/pages/my/my'
+      // 	})
+      // },
+      async payOrder() {
+        const orderInfo = {
+          // order_price:'this.amount',
+          order_price: 0.01,
+          consignee_addr: this.addstr,
+          goods: this.cart.filter(x => x.goods_state).map(x => ({
+            goods_id: x.goods_id,
+            goods_number: x.goods_count,
+            goods_price: x.goods_price
+          }))
+        }
+        const {
+          data: res
+        } = await uni.$http.post('/api/public/v1/my/orders/create', orderInfo)
+        console.log(res)
+        if (res.meta.status !== 200) return uni.$showMsg('创建订单失败')
+        const orderNumber = res.message.order_number
+
+        const {
+          data: res2
+        } = await uni.$http.post('/api/public/v1/my/orders/req_unifiedorder', {
+          order_number: oederNumber
+        })
+        if (res2.meta !== 200) return uni.$showMsg("预付订单生成失败")
+        const payInfo = res2.message.pay
+
+        const [err, succ] = await uni.requestPayment(payInfo)
+        if (err) return uni.$showMsg('订单未支付！')
+
+        const {
+          data: res3
+        } = await uni.$http.post('/api/public/v1/my/orders/req_unifiedorder', {
+          order_number: oederNumber
+        })
+        if (res3.meta.status !== 200) return uni.$showMsg('订单未支付！')
+        uni.showToast({
+          title: '支付完成！',
+          icon: 'success'
+        })
+      },
+      delayNavigate() {
+        this.showTips(this.seconds)
+
+        this.timer = setInterval(() => {
+          this.seconds--
+          if (this.seconds <= 0) {
+            clearInterval(this.timer)
+            uni.switchTab({
+              url: '/pages/my/my',
+              success: () => {
+                this.updateRedirectInfo({
+                  openType: 'switchTab',
+                  from: '/pages/cart/cart'
+                })
+              }
+            })
+            return
+          }
+          this.showTips(this.seconds)
+        }, 1000)
+      },
+      showTips(n) {
+        uni.showToast({
+          icon: 'none',
+          title: '请登录后再结算！' + n + '秒后跳转到登录页',
+          mask: true,
+          duration: 1500
+        })
+      }
+    }
   }
 </script>
 
@@ -51,34 +134,38 @@
   .my-settle-container {
     position: fixed;
     bottom: 0;
-    left: 0;
+    letf: 0;
     width: 100%;
     height: 50px;
-    // 将背景色从 cyan 改为 white
-    background-color: white;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-left: 5px;
+    background-color: white;
     font-size: 14px;
+    padding: 0 5px;
+    z-index: 999;
 
     .radio {
       display: flex;
       align-items: center;
     }
 
-    .amount {
-      color: #c00000;
+    .amount-box {
+      .amount {
+        color: #c00000;
+        font-weight: bold;
+        text-align: center;
+      }
     }
 
     .btn-settle {
-      height: 50px;
-      min-width: 100px;
       background-color: #c00000;
+      height: 50px;
       color: white;
       line-height: 50px;
-      text-align: center;
-      padding: 0 10px;
+      padding: 0 30px;
+      // min-width: 100px;
+      // text-align: center;
     }
   }
 </style>
