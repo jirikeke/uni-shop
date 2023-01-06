@@ -53,6 +53,7 @@
       }
     ]
   }],
+
   "tabBar": {
     "selectedColor": "#C00000",
     "list": [{
@@ -81,6 +82,7 @@
       }
     ]
   },
+
   "globalStyle": {
     "navigationBarTextStyle": "white",
     "navigationBarTitleText": "黑马优购",
